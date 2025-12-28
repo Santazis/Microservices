@@ -53,8 +53,10 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    app.SeedCatalogs();
-    app.SeedProducts();
+    // app.ClearDatabase();
+    // app.SeedCatalogs();
+    // app.SeedProducts();
+    // app.PrintDatabaseStats();
 }
 
 app.UseHttpsRedirection();
