@@ -7,11 +7,11 @@
   S3Settings__SecretKey: ${S3_SECRET_KEY}
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
 services:
-  aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
-    ports:
-      - "18888:18888"
-    container_name: aspire-dashboard
+#  aspire-dashboard:
+#    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+#    ports:
+#      - "18888:18888"
+#    container_name: aspire-dashboard
   rabbitmq:
     image: rabbitmq:management-alpine
     container_name: rabbitmq
@@ -45,6 +45,27 @@ services:
       - "4317:4317"
       - "4318:4318"
       - "16686:16686"
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: grafana
+#    ports:
+#      - "3000:3000"
+#    environment:
+#      - GF_SECURITY_ADMIN_USER=admin
+#      - GF_SECURITY_ADMIN_PASSWORD=admin
+#    volumes:
+#      - .:/var/lib/grafana
+#    depends_on:
+#      - jaeger
+#  prometheus: 
+#    image: prom/prometheus
+#    container_name: prometheus
+#    ports:
+#      - "9090:9090"
+#    volumes:
+#      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+#    command:
+#      - "--config.file=/etc/prometheus/prometheus.yml"
   user-api:
     build:
       context: Services/User/User.Api
@@ -130,7 +151,7 @@ services:
       - /app/obj
   basket-api:
     build:
-      context: Basket.Api
+      context: Services/Basket/Basket.Api
       dockerfile: Dockerfile
     container_name: basket-api
     ports:

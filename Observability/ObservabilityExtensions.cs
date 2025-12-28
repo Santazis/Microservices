@@ -17,7 +17,7 @@ public static class ObservabilityExtensions
             {
                 metrics.AddAspNetCoreInstrumentation();
                 metrics.AddHttpClientInstrumentation();
-                metrics.AddOtlpExporter();
+                metrics.AddPrometheusExporter();
             }).WithTracing(tracing =>
             {
                 tracing.AddAspNetCoreInstrumentation();
