@@ -20,6 +20,7 @@ public class ImageProcessedConsumer : IConsumer<ImageProcessedIntegrationEvent>
 
     public async Task Consume(ConsumeContext<ImageProcessedIntegrationEvent> context)
     {
+        
         _logger.LogInformation("{imagesCount} Images processed for product {productId}",context.Message.Images.Count, context.Message.ProductId);
         var updateRequests = context.Message.Images.Where(r => r.Value.Status == ImageProcessingResultStatus.Success && r.Value.Url != null)
             .Select(r => new UpdateImageRequest(r.Key, r.Value.Url!,null));

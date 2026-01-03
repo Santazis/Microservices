@@ -20,14 +20,15 @@ public class ProductService : IProductService
     private readonly ApplicationDbContext _dbContext;
     private readonly ICatalogService _catalogService;
     private readonly ILogger<ProductService> _logger;
-    private readonly IPublishEndpoint _publishEndpoint;
+    private readonly IOutboxMessageService _outbox;
+
     public ProductService(ApplicationDbContext dbContext, ICatalogService catalogService,
-        ILogger<ProductService> logger, IPublishEndpoint publishEndpoint)
+        ILogger<ProductService> logger, IOutboxMessageService outbox)
     {
         _dbContext = dbContext;
         _catalogService = catalogService;
         _logger = logger;
-        _publishEndpoint = publishEndpoint;
+        _outbox = outbox;
     }
 
     public async Task<Result<Guid>> CreateAsync(CreateProductRequest request, CancellationToken cancellation)
@@ -50,20 +51,22 @@ public class ProductService : IProductService
         return Result<Guid>.Success(product.Id);
     }
 
-    public async Task<PaginatedResponse<ProductDto>> GetProductsAsync(PaginationRequest pagination, CancellationToken cancellation)
+    public async Task<PaginatedResponse<ProductDto>> GetProductsAsync(PaginationRequest pagination,
+        CancellationToken cancellation)
     {
         var count = await _dbContext.Products.CountAsync(cancellation);
         var products = await _dbContext.Products.AsNoTracking()
             .Skip((pagination.Page - 1) * pagination.PageSize)
             .Take(pagination.PageSize)
             .Select(p => new ProductDto(p.Id, p.CatalogId, p.Name, p.Description, p.Price.Amount, p.Price.Currency,
-                p.Images.Select(i => new ImageDto(i.Url, i.SortOrder)).ToList(), p.StockQuantity > 0,p.StockQuantity)).ToListAsync(cancellation);
-        return new PaginatedResponse<ProductDto>(products,count);
+                p.Images.Select(i => new ImageDto(i.Url, i.SortOrder)).ToList(), p.StockQuantity > 0, p.StockQuantity))
+            .ToListAsync(cancellation);
+        return new PaginatedResponse<ProductDto>(products, count);
     }
 
-    public async Task<Result> DeleteAsync(Guid id,Guid userId, CancellationToken cancellation)
+    public async Task<Result> DeleteAsync(Guid id, Guid userId, CancellationToken cancellation)
     {
-        var product = await _dbContext.Products.FirstOrDefaultAsync(p => p.Id == id,cancellation);
+        var product = await _dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellation);
         if (product is null)
         {
             _logger.LogError("Product {productId} not found", id);
@@ -73,13 +76,27 @@ public class ProductService : IProductService
         //temporary no auth see controller
         if (product.MerchantId != null && product.MerchantId != userId)
         {
-            _logger.LogWarning("{userId} trying do delete other user product",userId);
+            _logger.LogWarning("{userId} trying do delete other user product", userId);
             return Result.Failure(ProductErrors.NoPermission);
         }
-        _dbContext.Products.Remove(product);
-        await _dbContext.SaveChangesAsync(cancellation);
-        _logger.LogInformation("Product {productId} deleted", id);
-        await _publishEndpoint.Publish(new ProductDeletedIntegrationEvent(product.Id),cancellation);
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellation);
+        try
+        {
+            _dbContext.Products.Remove(product);
+            _logger.LogInformation("Product {productId} deleted", id);
+            var @event = new ProductDeletedIntegrationEvent(product.Id);
+            await _outbox.PublishMessagesAsync(@event, cancellation);
+            await _dbContext.SaveChangesAsync(cancellation);
+            await transaction.CommitAsync(cancellation);
+
+        }
+        catch (Exception e)
+        {
+            await transaction.RollbackAsync(cancellation);
+            _logger.LogError(e, "Error deleting product {productId}", id);
+            return Result.Failure(new Error("Failed to delete product", "ProductService.DeleteAsync"));
+        }
         return Result.Success;
     }
 
@@ -105,29 +122,33 @@ public class ProductService : IProductService
             _logger.LogError("Product {productId} not found", id);
             return Result<ProductDto>.Failure(ProductErrors.NotFound);
         }
+
         return Result<ProductDto>.Success(product);
     }
 
     public async Task<Result<bool>> IsAvailableAsync(Guid productId, int quantity, CancellationToken cancellationToken)
     {
-        var product = await _dbContext.Products.AsNoTracking().FirstOrDefaultAsync(p=> p.Id == productId,cancellationToken);
+        var product = await _dbContext.Products.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken);
         if (product is null)
         {
             _logger.LogInformation("Product {productId} not found", productId);
             return Result<bool>.Failure(ProductErrors.NotFound);
         }
+
         if (product.StockQuantity == 0)
         {
-            _logger.LogInformation("Product out of stock {productId}",productId);
+            _logger.LogInformation("Product out of stock {productId}", productId);
             return Result<bool>.Failure(ProductErrors.OutOfStock);
         }
 
         if (product.StockQuantity < quantity)
         {
-            _logger.LogInformation("Insufficient stock for product {productId}",productId);
+            _logger.LogInformation("Insufficient stock for product {productId}", productId);
             return Result<bool>.Failure(ProductErrors.InsufficientStock);
         }
-        _logger.LogInformation("Product {productId} is available",productId);
+
+        _logger.LogInformation("Product {productId} is available", productId);
         return Result<bool>.Success(true);
     }
 

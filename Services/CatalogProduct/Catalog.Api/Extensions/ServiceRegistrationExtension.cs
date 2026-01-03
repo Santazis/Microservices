@@ -4,6 +4,7 @@ using Catalog.Application.Interfaces;
 using Catalog.Application.Services;
 using Catalog.Application.Services.Catalog;
 using Catalog.Application.Services.Product;
+using Catalog.Infrastructure.BackgroundServices;
 using Catalog.Infrastructure.Consumers;
 using Catalog.Infrastructure.Options;
 using Catalog.Infrastructure.Services;
@@ -20,6 +21,7 @@ namespace Catalog.Api.Extensions
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<ITempStorageService, TempStorageService>();
             services.AddScoped<IProductImageService, ProductImageService>();
+            services.AddScoped<IOutboxMessageService, OutboxMessageService>();
             return services;
         }
 
@@ -31,10 +33,11 @@ namespace Catalog.Api.Extensions
                 conf.SetKebabCaseEndpointNameFormatter();
                 conf.UsingRabbitMq((context, opt) =>
                 {
-                    opt.Host(new Uri(configuration["MessageBroker:Host"]!), cred =>
+                    
+                    opt.Host(new Uri(configuration["MessageBroker:Host"]!), cfg =>
                     {
-                        cred.Username(configuration["MessageBroker:Username"]!);
-                        cred.Password(configuration["MessageBroker:Password"]!);
+                        cfg.Username(configuration["MessageBroker:Username"]!);
+                        cfg.Password(configuration["MessageBroker:Password"]!);
                     });
                     opt.ConfigureEndpoints(context);
                 });
@@ -56,6 +59,12 @@ namespace Catalog.Api.Extensions
                 };
                 return new AmazonS3Client(cred, config);
             });
+            return services;
+        }
+
+        public static IServiceCollection AddBackgroundServices(this IServiceCollection services)
+        {
+            services.AddHostedService<OutboxProcessor>();
             return services;
         }
     }

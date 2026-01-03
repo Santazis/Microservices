@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -9,7 +11,8 @@ namespace Observability;
 
 public static class ObservabilityExtensions
 {
-    public static IServiceCollection AddObservability(this IServiceCollection services, string serviceName,Action<TracerProviderBuilder>? configure = null)
+    public static IServiceCollection AddObservability(this IServiceCollection services, string serviceName,
+        Action<TracerProviderBuilder>? configure = null)
     {
         services.AddOpenTelemetry()
             .ConfigureResource(conf => conf.AddService(serviceName))
@@ -21,10 +24,17 @@ public static class ObservabilityExtensions
             }).WithTracing(tracing =>
             {
                 tracing.AddAspNetCoreInstrumentation();
-                tracing.AddEntityFrameworkCoreInstrumentation(conf=>conf.SetDbStatementForText = true);
+                tracing.AddEntityFrameworkCoreInstrumentation(conf => conf.SetDbStatementForText = true);
                 tracing.AddHttpClientInstrumentation();
                 tracing.AddGrpcClientInstrumentation();
-                tracing.AddOtlpExporter();
+                tracing.AddOtlpExporter(opt =>
+                {
+                    opt.ExportProcessorType = ExportProcessorType.Batch;
+                    opt.BatchExportProcessorOptions = new BatchExportProcessorOptions<Activity>()
+                    {
+                        ScheduledDelayMilliseconds = 5000
+                    };
+                });
                 configure?.Invoke(tracing);
             });
         services.AddLogging(log =>
@@ -36,7 +46,6 @@ public static class ObservabilityExtensions
                 opt.IncludeFormattedMessage = true;
                 opt.AddOtlpExporter();
             });
-            
         });
         return services;
     }
